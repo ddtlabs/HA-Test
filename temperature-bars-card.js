@@ -2,12 +2,17 @@
  * temperature-bars-card
  *
  * Raumtemperaturen als Balken mit Farbverlauf (blau -> gruen -> rot).
- * Pro Raum eine priorisierte Sensorliste: der erste Sensor mit gueltigem
- * Wert wird angezeigt, die uebrigen dienen als Fallback.
- * Konfiguration komplett ueber den visuellen Editor moeglich.
+ * Raeume sind in Gruppen organisiert (z. B. beheizt / unbeheizt / aussen),
+ * jede Gruppe kann eine eigene Skala haben, zwischen den Gruppen steht
+ * eine duenne Trennlinie. Pro Raum eine priorisierte Sensorliste: der
+ * erste Sensor mit gueltigem Wert wird angezeigt, die uebrigen dienen als
+ * Fallback. Konfiguration komplett ueber den visuellen Editor moeglich.
+ *
+ * Abwaertskompatibel: eine Konfiguration mit `rooms:` auf oberster Ebene
+ * wird als eine einzelne Gruppe dargestellt.
  */
 
-const CARD_VERSION = "0.1.0";
+const CARD_VERSION = "0.2.0";
 
 const DEFAULTS = {
   min: 15,
@@ -22,42 +27,68 @@ const DEFAULTS = {
   },
 };
 
+const SCALE_KEYS = ["min", "max", "green_from", "green_to"];
+
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const esc = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 function num(v, fallback) {
+  if (v === "" || v === null || v === undefined) return fallback;
   const n = typeof v === "number" ? v : parseFloat(v);
   return Number.isFinite(n) ? n : fallback;
 }
 
-function normalize(config) {
-  const c = {
-    ...config,
-    min: num(config.min, DEFAULTS.min),
-    max: num(config.max, DEFAULTS.max),
-    green_from: num(config.green_from, DEFAULTS.green_from),
-    green_to: num(config.green_to, DEFAULTS.green_to),
-    decimals: clamp(Math.round(num(config.decimals, DEFAULTS.decimals)), 0, 3),
-    colors: { ...DEFAULTS.colors, ...(config.colors || {}) },
-    rooms: Array.isArray(config.rooms) ? config.rooms : [],
+/** Skala aus `src`, fehlende oder ungueltige Werte kommen aus `base`. */
+function normScale(src, base) {
+  const s = {
+    min: num(src.min, base.min),
+    max: num(src.max, base.max),
+    green_from: num(src.green_from, base.green_from),
+    green_to: num(src.green_to, base.green_to),
   };
-  if (c.max <= c.min) {
-    c.min = DEFAULTS.min;
-    c.max = DEFAULTS.max;
+  if (s.max <= s.min) {
+    s.min = base.min;
+    s.max = base.max;
   }
-  if (c.green_to < c.green_from) {
-    [c.green_from, c.green_to] = [c.green_to, c.green_from];
+  if (s.max <= s.min) {
+    s.min = DEFAULTS.min;
+    s.max = DEFAULTS.max;
   }
-  return c;
+  if (s.green_to < s.green_from) {
+    [s.green_from, s.green_to] = [s.green_to, s.green_from];
+  }
+  return s;
 }
 
-function gradientCss(c) {
-  const p = (v) => clamp(((v - c.min) / (c.max - c.min)) * 100, 0, 100).toFixed(2);
+/** Konfiguration in Gruppenform bringen (alte `rooms:` -> eine Gruppe). */
+function configGroups(config) {
+  if (Array.isArray(config.groups)) return config.groups;
+  if (Array.isArray(config.rooms)) return [{ rooms: config.rooms }];
+  return [];
+}
+
+function normalize(config) {
+  const top = normScale(config, DEFAULTS);
+  return {
+    ...config,
+    ...top,
+    decimals: clamp(Math.round(num(config.decimals, DEFAULTS.decimals)), 0, 3),
+    colors: { ...DEFAULTS.colors, ...(config.colors || {}) },
+    groups: configGroups(config).map((g) => ({
+      name: g.name || "",
+      rooms: Array.isArray(g.rooms) ? g.rooms : [],
+      ...normScale(g, top),
+    })),
+  };
+}
+
+function gradientCss(s, colors) {
+  const p = (v) => clamp(((v - s.min) / (s.max - s.min)) * 100, 0, 100).toFixed(2);
   return (
-    `linear-gradient(90deg, ${c.colors.low} 0%, ` +
-    `${c.colors.ok} ${p(c.green_from)}%, ${c.colors.ok} ${p(c.green_to)}%, ` +
-    `${c.colors.high} 100%)`
+    `linear-gradient(90deg, ${colors.low} 0%, ` +
+    `${colors.ok} ${p(s.green_from)}%, ${colors.ok} ${p(s.green_to)}%, ` +
+    `${colors.high} 100%)`
   );
 }
 
@@ -118,13 +149,21 @@ class TemperatureBarsCard extends HTMLElement {
   }
 
   static getStubConfig() {
-    return { title: "Temperaturen", rooms: [] };
+    return { title: "Temperaturen", groups: [] };
   }
 
   setConfig(config) {
     if (!config) throw new Error("Ungueltige Konfiguration");
     if (config.rooms !== undefined && !Array.isArray(config.rooms)) {
       throw new Error("'rooms' muss eine Liste sein");
+    }
+    if (config.groups !== undefined) {
+      if (!Array.isArray(config.groups)) throw new Error("'groups' muss eine Liste sein");
+      config.groups.forEach((g, i) => {
+        if (g.rooms !== undefined && !Array.isArray(g.rooms)) {
+          throw new Error(`'groups[${i}].rooms' muss eine Liste sein`);
+        }
+      });
     }
     this._config = normalize(config);
     this._sig = null;
@@ -137,7 +176,8 @@ class TemperatureBarsCard extends HTMLElement {
   }
 
   getCardSize() {
-    return 1 + (this._config ? this._config.rooms.length : 0);
+    if (!this._config) return 1;
+    return 1 + this._config.groups.reduce((n, g) => n + g.rooms.length + 1, 0);
   }
 
   _render() {
@@ -145,55 +185,72 @@ class TemperatureBarsCard extends HTMLElement {
     const c = this._config;
     const hass = this._hass;
 
-    const rows = c.rooms.map((room) => {
-      const r = resolveRoom(hass, room);
-      return {
-        name: roomName(hass, room),
-        r,
-        entity: r ? r.entity : (room.sensors || []).filter(Boolean)[0],
-      };
-    });
+    const groups = c.groups.map((g) => ({
+      scale: g,
+      rows: g.rooms.map((room) => {
+        const r = resolveRoom(hass, room);
+        return {
+          name: roomName(hass, room),
+          r,
+          entity: r ? r.entity : (room.sensors || []).filter(Boolean)[0],
+        };
+      }),
+    }));
 
-    const sig = JSON.stringify(rows.map((x) => [x.name, x.r && x.r.value, x.r && x.r.entity]));
+    const sig = JSON.stringify(groups.map((g) => g.rows.map((x) => [x.name, x.r && x.r.value, x.r && x.r.entity])));
     if (sig === this._sig) return;
     this._sig = sig;
 
     const lang = hass.locale && hass.locale.language;
     const fmt = (v) =>
       v.toLocaleString(lang, { minimumFractionDigits: c.decimals, maximumFractionDigits: c.decimals });
-    const grad = gradientCss(c);
+    const fmtScale = (v) => `${v.toLocaleString(lang, { maximumFractionDigits: 1 })}°`;
 
-    const rowHtml = rows
-      .map((x, i) => {
-        if (!x.r) {
-          return `<div class="row off" data-i="${i}">
-            <div class="name">${esc(x.name)}</div>
-            <div class="val">–</div>
-            <div class="bar"><div class="track" style="background:${grad}"></div></div>
-          </div>`;
-        }
-        const f = clamp((x.r.value - c.min) / (c.max - c.min), 0, 1);
-        const title = `${x.r.entity}${x.r.fallback ? " (Fallback-Sensor)" : ""}`;
-        return `<div class="row" data-i="${i}" title="${esc(title)}">
-          <div class="name">${esc(x.name)}</div>
-          <div class="val">${fmt(x.r.value)}${esc(x.r.unit)}</div>
-          <div class="bar">
-            <div class="track" style="background:${grad}"></div>
-            <div class="dot" style="left:calc(7px + (100% - 14px) * ${f.toFixed(4)})"></div>
-          </div>
-        </div>`;
+    const groupHtml = groups
+      .map((g, gi) => {
+        const grad = gradientCss(g.scale, c.colors);
+        const rowsHtml = g.rows
+          .map((x, i) => {
+            if (!x.r) {
+              return `<div class="row off" data-g="${gi}" data-i="${i}">
+                <div class="name">${esc(x.name)}</div>
+                <div class="val">–</div>
+                <div class="bar"><div class="track" style="background:${grad}"></div></div>
+              </div>`;
+            }
+            const f = clamp((x.r.value - g.scale.min) / (g.scale.max - g.scale.min), 0, 1);
+            const title = `${x.r.entity}${x.r.fallback ? " (Fallback-Sensor)" : ""}`;
+            return `<div class="row" data-g="${gi}" data-i="${i}" title="${esc(title)}">
+              <div class="name">${esc(x.name)}</div>
+              <div class="val">${fmt(x.r.value)}${esc(x.r.unit)}</div>
+              <div class="bar">
+                <div class="track" style="background:${grad}"></div>
+                <div class="dot" style="left:calc(7px + (100% - 14px) * ${f.toFixed(4)})"></div>
+              </div>
+            </div>`;
+          })
+          .join("");
+        const scaleHtml = g.rows.length
+          ? `<div class="scale"><div></div><div></div><div><span>${esc(fmtScale(g.scale.min))}</span><span>${esc(
+              fmtScale(g.scale.max)
+            )}</span></div></div>`
+          : "";
+        return `<div class="group">${rowsHtml}${scaleHtml}</div>`;
       })
       .join("");
 
-    const empty = rows.length
+    const hasRows = groups.some((g) => g.rows.length);
+    const empty = hasRows
       ? ""
-      : `<div class="hint">Noch keine Räume konfiguriert. Räume und Sensoren im Karten-Editor hinzufügen.</div>`;
+      : `<div class="hint">Noch keine Räume konfiguriert. Gruppen, Räume und Sensoren im Karten-Editor hinzufügen.</div>`;
 
     this.shadowRoot.innerHTML = `
       <style>
         :host { display: block; }
         .rows { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 12px; }
         .title { padding: 16px 16px 8px; font-size: var(--ha-card-header-font-size, 24px); line-height: 1.2; color: var(--ha-card-header-color, var(--primary-text-color)); }
+        .group { display: flex; flex-direction: column; gap: 12px; }
+        .group + .group { border-top: 1px solid var(--divider-color); padding-top: 12px; }
         .row { display: grid; grid-template-columns: minmax(64px, 28%) 56px 1fr; align-items: center; gap: 12px; cursor: pointer; }
         .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--primary-text-color); }
         .val { text-align: right; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -209,14 +266,13 @@ class TemperatureBarsCard extends HTMLElement {
       <ha-card>
         ${c.title ? `<div class="title">${esc(c.title)}</div>` : ""}
         ${empty}
-        ${rows.length ? `<div class="rows">${rowHtml}
-          <div class="scale"><div></div><div></div><div><span>${esc(fmt(c.min))}°</span><span>${esc(fmt(c.max))}°</span></div></div>
-        </div>` : ""}
+        ${hasRows ? `<div class="rows">${groupHtml}</div>` : ""}
       </ha-card>`;
 
     this.shadowRoot.querySelectorAll(".row").forEach((el) => {
       el.addEventListener("click", () => {
-        const x = rows[Number(el.dataset.i)];
+        const g = groups[Number(el.dataset.g)];
+        const x = g && g.rows[Number(el.dataset.i)];
         if (!x || !x.entity) return;
         this.dispatchEvent(
           new CustomEvent("hass-more-info", { detail: { entityId: x.entity }, bubbles: true, composed: true })
@@ -249,8 +305,9 @@ const LABELS = {
   max: "Skala bis (°C)",
   green_from: "Grün ab (°C)",
   green_to: "Grün bis (°C)",
+  name: "Name",
   area: "Bereich",
-  name: "Anzeigename (optional)",
+  room_name: "Anzeigename (optional)",
   entity: "Temperatursensor",
 };
 
@@ -270,15 +327,25 @@ class TemperatureBarsCardEditor extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
-    this._showAll = new Set(); // Raum-Indizes mit "alle Sensoren anzeigen"
+    this._showAll = new WeakSet(); // Raum-Objekte mit "alle Sensoren anzeigen"
     this._lastEmitted = null;
   }
 
   setConfig(config) {
     if (this._lastEmitted !== null && JSON.stringify(config) === this._lastEmitted) return;
+    const cfg = { ...config };
+    delete cfg.rooms;
+    const src = Array.isArray(config.groups)
+      ? config.groups
+      : Array.isArray(config.rooms) && config.rooms.length
+      ? [{ rooms: config.rooms }]
+      : [];
     this._cfg = {
-      ...config,
-      rooms: (config.rooms || []).map((r) => ({ ...r, sensors: [...(r.sensors || [])] })),
+      ...cfg,
+      groups: src.map((g) => ({
+        ...g,
+        rooms: (g.rooms || []).map((r) => ({ ...r, sensors: [...(r.sensors || [])] })),
+      })),
     };
     this._ready = ensureEditorElements().then(() => this._render());
   }
@@ -290,16 +357,24 @@ class TemperatureBarsCardEditor extends HTMLElement {
   }
 
   _emit() {
-    const rooms = this._cfg.rooms.map((r) => {
-      const o = { ...r, sensors: (r.sensors || []).filter(Boolean) };
+    const empty = (v) => v === undefined || v === null || v === "";
+    const groups = this._cfg.groups.map((g) => {
+      const o = {
+        ...g,
+        rooms: (g.rooms || []).map((r) => {
+          const room = { ...r, sensors: (r.sensors || []).filter(Boolean) };
+          if (!room.name) delete room.name;
+          if (!room.area) delete room.area;
+          return room;
+        }),
+      };
       if (!o.name) delete o.name;
-      if (!o.area) delete o.area;
+      for (const k of SCALE_KEYS) if (empty(o[k])) delete o[k];
       return o;
     });
-    const cfg = { ...this._cfg, rooms };
-    for (const k of ["title", "min", "max", "green_from", "green_to"]) {
-      if (cfg[k] === undefined || cfg[k] === null || cfg[k] === "") delete cfg[k];
-    }
+    const cfg = { ...this._cfg, groups };
+    delete cfg.rooms;
+    for (const k of ["title", ...SCALE_KEYS]) if (empty(cfg[k])) delete cfg[k];
     this._lastEmitted = JSON.stringify(cfg);
     this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: cfg }, bubbles: true, composed: true }));
   }
@@ -310,18 +385,30 @@ class TemperatureBarsCardEditor extends HTMLElement {
     if (rerender) this._render();
   }
 
-  _form(schema, data, onChange) {
+  _form(schema, data, onChange, labels) {
+    const l = labels || LABELS;
     return h("ha-form", {
       ".hass": this._hass,
       ".schema": schema,
       ".data": data,
-      ".computeLabel": (s) => LABELS[s.name] || s.name,
+      ".computeLabel": (s) => l[s.name] || LABELS[s.name] || s.name,
       onchange: (e) => e.stopPropagation(),
       "onvalue-changed": (ev) => {
         ev.stopPropagation();
         onChange(ev.detail.value);
       },
     });
+  }
+
+  _moveBtns(arr, idx, onRemove) {
+    const swap = (a, b) => ([arr[a], arr[b]] = [arr[b], arr[a]]);
+    return h(
+      "div",
+      { class: "btns" },
+      h("button", { class: "small", text: "▲", title: "Nach oben", ".disabled": idx === 0, onclick: () => this._change(() => swap(idx, idx - 1)) }),
+      h("button", { class: "small", text: "▼", title: "Nach unten", ".disabled": idx === arr.length - 1, onclick: () => this._change(() => swap(idx, idx + 1)) }),
+      h("button", { class: "small danger", text: "✕", title: "Entfernen", onclick: () => this._change(onRemove) })
+    );
   }
 
   _render() {
@@ -337,6 +424,9 @@ class TemperatureBarsCardEditor extends HTMLElement {
         :host { display: block; }
         .section { margin-bottom: 20px; }
         h3 { margin: 16px 0 8px; font-size: 16px; font-weight: 500; color: var(--primary-text-color); }
+        .group { border: 2px solid var(--divider-color); border-radius: 14px; padding: 12px; margin-bottom: 16px; }
+        .grouphead { display: flex; align-items: flex-start; gap: 4px; margin-bottom: 8px; }
+        .grouphead ha-form { flex: 1; }
         .room { border: 1px solid var(--divider-color); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
         .roomhead, .sensor { display: flex; align-items: center; gap: 4px; }
         .roomhead ha-form { flex: 1; }
@@ -355,7 +445,7 @@ class TemperatureBarsCardEditor extends HTMLElement {
       })
     );
 
-    // Allgemein
+    // Allgemein: Titel + Standardskala
     const general = {
       title: cfg.title || "",
       min: num(cfg.min, DEFAULTS.min),
@@ -363,7 +453,7 @@ class TemperatureBarsCardEditor extends HTMLElement {
       green_from: num(cfg.green_from, DEFAULTS.green_from),
       green_to: num(cfg.green_to, DEFAULTS.green_to),
     };
-    const num_sel = { number: { mode: "box", step: 0.5 } };
+    const numSel = { number: { mode: "box", step: 0.5 } };
     root.append(
       h(
         "div",
@@ -374,52 +464,78 @@ class TemperatureBarsCardEditor extends HTMLElement {
             {
               type: "grid",
               name: "",
-              schema: [
-                { name: "min", selector: num_sel },
-                { name: "max", selector: num_sel },
-                { name: "green_from", selector: num_sel },
-                { name: "green_to", selector: num_sel },
-              ],
+              schema: SCALE_KEYS.map((k) => ({ name: k, selector: numSel })),
             },
           ],
           general,
-          (v) => this._change(() => Object.assign(this._cfg, v), false)
-        )
+          (v) => this._change(() => Object.assign(this._cfg, v), false),
+          { min: "Standard: Skala von (°C)", max: "Standard: Skala bis (°C)", green_from: "Standard: Grün ab (°C)", green_to: "Standard: Grün bis (°C)" }
+        ),
+        h("div", { class: "note", text: "Die Standardskala gilt für alle Gruppen, die keine eigene Skala haben." })
       )
     );
 
-    // Raeume
-    root.append(h("h3", { text: "Räume" }));
-    const n = cfg.rooms.length;
-    cfg.rooms.forEach((room, i) => root.append(this._renderRoom(room, i, n)));
+    // Gruppen
+    root.append(h("h3", { text: "Gruppen" }));
+    cfg.groups.forEach((group, gi) => root.append(this._renderGroup(group, gi)));
     root.append(
       h("button", {
-        text: "+ Raum hinzufügen",
-        onclick: () => this._change(() => cfg.rooms.push({ area: "", name: "", sensors: [] })),
+        text: "+ Gruppe hinzufügen",
+        onclick: () => this._change(() => cfg.groups.push({ name: "", rooms: [] })),
       })
     );
     root.append(
       h("div", {
         class: "note",
-        text: "Pro Raum zählt die Reihenfolge der Sensoren: Der erste Sensor mit gültigem Wert wird angezeigt, die weiteren sind Fallback.",
+        text: "Zwischen den Gruppen wird eine dünne Trennlinie angezeigt. Pro Raum zählt die Reihenfolge der Sensoren: Der erste Sensor mit gültigem Wert wird angezeigt, die weiteren sind Fallback.",
       })
     );
   }
 
-  _renderRoom(room, i, n) {
+  _renderGroup(group, gi) {
     const cfg = this._cfg;
-    const hass = this._hass;
-    const box = h("div", { class: "room" });
+    const box = h("div", { class: "group" });
+    const numSel = { number: { mode: "box", step: 0.5 } };
 
-    const swap = (arr, a, b) => ([arr[a], arr[b]] = [arr[b], arr[a]]);
-    const moveBtns = (arr, idx, onRemove) =>
+    box.append(
       h(
         "div",
-        { class: "btns" },
-        h("button", { class: "small", text: "▲", title: "Nach oben", ".disabled": idx === 0, onclick: () => this._change(() => swap(arr, idx, idx - 1)) }),
-        h("button", { class: "small", text: "▼", title: "Nach unten", ".disabled": idx === arr.length - 1, onclick: () => this._change(() => swap(arr, idx, idx + 1)) }),
-        h("button", { class: "small danger", text: "✕", title: "Entfernen", onclick: () => this._change(onRemove) })
-      );
+        { class: "grouphead" },
+        this._form(
+          [
+            { name: "name", selector: { text: {} } },
+            {
+              type: "grid",
+              name: "",
+              schema: SCALE_KEYS.map((k) => ({ name: k, selector: numSel })),
+            },
+          ],
+          { name: group.name || "", min: group.min, max: group.max, green_from: group.green_from, green_to: group.green_to },
+          (v) =>
+            this._change(() => {
+              group.name = v.name || "";
+              for (const k of SCALE_KEYS) group[k] = v[k];
+            }, false),
+          { name: "Gruppenname (nur im Editor)" }
+        ),
+        this._moveBtns(cfg.groups, gi, () => cfg.groups.splice(gi, 1))
+      )
+    );
+    box.append(h("div", { class: "note", text: "Leere Skalenfelder übernehmen die Standardskala." }));
+
+    group.rooms.forEach((room, ri) => box.append(this._renderRoom(group, room, ri)));
+    box.append(
+      h("button", {
+        text: "+ Raum hinzufügen",
+        onclick: () => this._change(() => group.rooms.push({ area: "", name: "", sensors: [] })),
+      })
+    );
+    return box;
+  }
+
+  _renderRoom(group, room, ri) {
+    const hass = this._hass;
+    const box = h("div", { class: "room" });
 
     // Kopf: Bereich + Name
     box.append(
@@ -438,19 +554,18 @@ class TemperatureBarsCardEditor extends HTMLElement {
               room.area = v.area || "";
               room.name = v.name || "";
             }, areaChanged);
-          }
+          },
+          { name: LABELS.room_name }
         ),
-        moveBtns(cfg.rooms, i, () => {
-          cfg.rooms.splice(i, 1);
-          this._showAll.clear();
-        })
+        this._moveBtns(group.rooms, ri, () => group.rooms.splice(ri, 1))
       )
     );
 
     // Sensoren
     box.append(h("div", { class: "sensors-title", text: "Sensoren (Priorität von oben nach unten)" }));
     const areaIds = areaTempSensors(hass, room.area);
-    const restrict = room.area && areaIds.length > 0 && !this._showAll.has(i);
+    const showAll = this._showAll.has(room);
+    const restrict = room.area && areaIds.length > 0 && !showAll;
     const filter = { domain: "sensor", device_class: "temperature" };
     const entitySel = restrict ? { entity: { filter, include_entities: areaIds } } : { entity: { filter } };
 
@@ -462,7 +577,7 @@ class TemperatureBarsCardEditor extends HTMLElement {
           this._form([{ name: "entity", selector: entitySel }], { entity: id }, (v) =>
             this._change(() => (room.sensors[j] = v.entity || ""), false)
           ),
-          moveBtns(room.sensors, j, () => room.sensors.splice(j, 1))
+          this._moveBtns(room.sensors, j, () => room.sensors.splice(j, 1))
         )
       );
     });
@@ -490,10 +605,10 @@ class TemperatureBarsCardEditor extends HTMLElement {
           { class: "check" },
           h("input", {
             type: "checkbox",
-            ".checked": this._showAll.has(i),
+            ".checked": showAll,
             onchange: (e) => {
-              if (e.target.checked) this._showAll.add(i);
-              else this._showAll.delete(i);
+              if (e.target.checked) this._showAll.add(room);
+              else this._showAll.delete(room);
               this._render();
             },
           }),
@@ -516,7 +631,7 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "temperature-bars-card",
   name: "Temperature Bars Card",
-  description: "Raumtemperaturen als Balken mit Farbverlauf, mit priorisierten Sensoren pro Raum.",
+  description: "Raumtemperaturen als Balken mit Farbverlauf, in Gruppen mit eigener Skala und priorisierten Sensoren pro Raum.",
   preview: false,
 });
 

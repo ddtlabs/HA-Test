@@ -5,6 +5,7 @@ Home-Assistant-Dashboard-Karte, die die Raumtemperaturen als Balken mit Farbverl
 - Skala standardmäßig **15–25 °C**
 - Farbverlauf: unter 19 °C blau, **19–21 °C grün**, darüber rot, mit fließenden Übergängen
 - Ein Punkt markiert die aktuelle Temperatur, der Wert steht links neben dem Balken
+- Räume sind in **Gruppen** organisiert (z. B. beheizt, unbeheizt, außen). Zwischen den Gruppen steht nur eine dünne Trennlinie, jede Gruppe kann eine **eigene Skala** haben
 - Pro Raum eine **priorisierte Sensorliste**: der erste Sensor mit gültigem Wert wird angezeigt (z. B. Zigbee zuerst, Homematic als Fallback)
 - Klick auf eine Zeile öffnet die Detailansicht des verwendeten Sensors
 - Vollständig über den **visuellen Editor** konfigurierbar, nichts ist vorbelegt
@@ -17,46 +18,64 @@ Home-Assistant-Dashboard-Karte, die die Raumtemperaturen als Balken mit Farbverl
 
 Die Ressource wird von HACS automatisch eingetragen. Manuell wäre es `/hacsfiles/<repo-name>/temperature-bars-card.js` als Typ *JavaScript-Modul*.
 
+Bei einem Update in HACS auf „Aktualisieren" klicken und danach den Browser-Cache neu laden.
+
 ## Einrichtung
 
 1. Dashboard bearbeiten → Karte hinzufügen → **Temperature Bars Card**
-2. Mit **+ Raum hinzufügen** einen Raum anlegen und den HA-Bereich auswählen. Der Anzeigename ist optional, sonst wird der Bereichsname verwendet.
-3. Mit **+ Sensor** Sensoren auswählen. Angeboten werden standardmäßig nur die Temperatursensoren des gewählten Bereichs. Über die Checkbox lassen sich alle Temperatursensoren anzeigen.
-4. **Sensoren des Bereichs übernehmen** fügt alle Temperatursensoren des Bereichs auf einmal hinzu, Homematic-Sensoren landen dabei zuletzt. Die Reihenfolge lässt sich mit ▲ ▼ anpassen.
+2. Mit **+ Gruppe hinzufügen** eine Gruppe anlegen (der Gruppenname dient nur der Übersicht im Editor). Optional eigene Skalenwerte eintragen, leere Felder übernehmen die Standardskala vom Kartenanfang.
+3. In der Gruppe mit **+ Raum hinzufügen** einen Raum anlegen und den HA-Bereich auswählen. Der Anzeigename ist optional, sonst wird der Bereichsname verwendet.
+4. Mit **+ Sensor** Sensoren auswählen. Angeboten werden standardmäßig nur die Temperatursensoren des gewählten Bereichs. Über die Checkbox lassen sich alle Temperatursensoren anzeigen.
+5. **Sensoren des Bereichs übernehmen** fügt alle Temperatursensoren des Bereichs auf einmal hinzu, Homematic-Sensoren landen dabei zuletzt. Die Reihenfolge von Sensoren, Räumen und Gruppen lässt sich mit ▲ ▼ anpassen.
 
 ## YAML-Beispiel
 
 ```yaml
 type: custom:temperature-bars-card
 title: Temperaturen
-min: 15
+min: 15                    # Standardskala für Gruppen ohne eigene Werte
 max: 25
 green_from: 19
 green_to: 21
 decimals: 1
-colors:          # optional
+colors:                    # optional
   low: "#3b82f6"
   ok: "#4ade80"
   high: "#ef4444"
-rooms:
-  - area: wohnzimmer        # HA-Bereichs-ID, optional
-    name: Wohnzimmer        # optional, sonst Bereichsname
-    sensors:                # Priorität von oben nach unten
-      - sensor.wohnzimmer_zigbee_temperature
-      - sensor.wohnzimmer_heizung_temperature
+groups:
+  - name: beheizt          # nur für den Editor, wird nicht angezeigt
+    rooms:
+      - area: wohnzimmer   # HA-Bereichs-ID, optional
+        name: Wohnzimmer   # optional, sonst Bereichsname
+        sensors:           # Priorität von oben nach unten
+          - sensor.wohnzimmer_zigbee_temperature
+          - sensor.wohnzimmer_heizung_temperature
+  - name: außen
+    min: -10               # eigene Skala dieser Gruppe
+    max: 35
+    green_from: 10
+    green_to: 25
+    rooms:
+      - area: garten
+        sensors:
+          - sensor.garten_temperature
 ```
+
+Eine Konfiguration mit `rooms:` direkt auf oberster Ebene (ohne Gruppen) funktioniert weiterhin und wird als eine Gruppe dargestellt.
 
 ## Optionen
 
 | Option | Standard | Beschreibung |
 | --- | --- | --- |
 | `title` | – | Kartentitel |
-| `min` / `max` | 15 / 25 | Skala des Balkens in °C |
-| `green_from` / `green_to` | 19 / 21 | Grüner Komfortbereich |
+| `min` / `max` | 15 / 25 | Standardskala des Balkens in °C |
+| `green_from` / `green_to` | 19 / 21 | Standard für den grünen Komfortbereich |
 | `decimals` | 1 | Nachkommastellen |
 | `colors.low/ok/high` | blau/grün/rot | Farben des Verlaufs |
-| `rooms[].sensors` | – | Sensorliste in Prioritätsreihenfolge |
-| `rooms[].area` | – | HA-Bereich, filtert die Sensorauswahl im Editor |
-| `rooms[].name` | Bereichsname | Anzeigename |
+| `groups[].name` | – | Gruppenname, nur im Editor sichtbar |
+| `groups[].min/max/green_from/green_to` | Standardskala | Eigene Skala der Gruppe |
+| `groups[].rooms[].sensors` | – | Sensorliste in Prioritätsreihenfolge |
+| `groups[].rooms[].area` | – | HA-Bereich, filtert die Sensorauswahl im Editor |
+| `groups[].rooms[].name` | Bereichsname | Anzeigename |
 
 Ein Raum ohne gültigen Sensorwert (alle `unavailable`/`unknown`) wird abgedunkelt mit „–" angezeigt.
