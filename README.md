@@ -1,4 +1,4 @@
-# Temperature Bars Card
+# Temperature Overview Bars Card
 
 [Deutsch](README.de.md)
 
@@ -17,7 +17,7 @@ A Home Assistant dashboard card that shows room temperatures as gradient bars (s
 
 1. HACS → menu (three dots) → **Custom repositories**
 2. Enter the repository URL and choose type **Dashboard** (formerly "Lovelace")
-3. Download "Temperature Bars Card" and hard-reload the browser (Ctrl+F5)
+3. Download "Temperature Overview Bars Card" and hard-reload the browser (Ctrl+F5)
 
 HACS adds the resource automatically. Manually it would be `/hacsfiles/<repo-name>/temperature-bars-card.js` as type *JavaScript module*.
 
@@ -25,7 +25,7 @@ To update, click "Update" in HACS and hard-reload the browser.
 
 ## Setup
 
-1. Edit dashboard → Add card → **Temperature Bars Card**
+1. Edit dashboard → Add card → **Temperature Overview Bars Card**
 2. Use **+ Add group** to create a group (the group name is only used in the editor). Optionally enter a custom scale; empty fields use the default scale of the card.
 3. Use **+ Add room** inside a group and pick the HA area. The display name is optional, the area name is used otherwise.
 4. Use **+ Sensor** to pick sensors. By default only the temperature sensors of the selected area are offered; a checkbox shows all temperature sensors.

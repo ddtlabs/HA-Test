@@ -15,7 +15,7 @@
  * rendered as a single group.
  */
 
-const CARD_VERSION = "0.3.0";
+const CARD_VERSION = "0.3.1";
 
 const DEFAULTS = {
   min: 15,
@@ -728,7 +728,7 @@ customElements.define("temperature-bars-card-editor", TemperatureBarsCardEditor)
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "temperature-bars-card",
-  name: "Temperature Bars Card",
+  name: "Temperature Overview Bars Card",
   description: "Room temperatures as gradient bars, organized in groups with their own scale and prioritized sensors per room.",
   preview: false,
 });

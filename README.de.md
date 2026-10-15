@@ -1,4 +1,4 @@
-# Temperature Bars Card
+# Temperature Overview Bars Card
 
 [English](README.md)
 
@@ -17,7 +17,7 @@ Home-Assistant-Dashboard-Karte, die die Raumtemperaturen als Balken mit Farbverl
 
 1. HACS → Menü (drei Punkte) → **Benutzerdefinierte Repositories**
 2. Repository-URL eintragen, Typ **Dashboard** (früher „Lovelace") wählen
-3. „Temperature Bars Card" herunterladen, Browser-Cache neu laden (Strg+F5)
+3. „Temperature Overview Bars Card" herunterladen, Browser-Cache neu laden (Strg+F5)
 
 Die Ressource wird von HACS automatisch eingetragen. Manuell wäre es `/hacsfiles/<repo-name>/temperature-bars-card.js` als Typ *JavaScript-Modul*.
 
@@ -25,7 +25,7 @@ Bei einem Update in HACS auf „Aktualisieren" klicken und danach den Browser-Ca
 
 ## Einrichtung
 
-1. Dashboard bearbeiten → Karte hinzufügen → **Temperature Bars Card**
+1. Dashboard bearbeiten → Karte hinzufügen → **Temperature Overview Bars Card**
 2. Mit **+ Gruppe hinzufügen** eine Gruppe anlegen (der Gruppenname dient nur der Übersicht im Editor). Optional eigene Skalenwerte eintragen, leere Felder übernehmen die Standardskala vom Kartenanfang.
 3. In der Gruppe mit **+ Raum hinzufügen** einen Raum anlegen und den HA-Bereich auswählen. Der Anzeigename ist optional, sonst wird der Bereichsname verwendet.
 4. Mit **+ Sensor** Sensoren auswählen. Angeboten werden standardmäßig nur die Temperatursensoren des gewählten Bereichs. Über die Checkbox lassen sich alle Temperatursensoren anzeigen.
