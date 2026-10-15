@@ -1,39 +1,42 @@
 # Temperature Bars Card
 
-Home-Assistant-Dashboard-Karte, die die Raumtemperaturen als Balken mit Farbverlauf anzeigt (Optik angelehnt an die Wettervorhersage-Karte).
+[Deutsch](README.de.md)
 
-- Skala standardmäßig **15–25 °C**
-- Farbverlauf: unter 19 °C blau, **19–21 °C grün**, darüber rot, mit fließenden Übergängen
-- Ein Punkt markiert die aktuelle Temperatur, der Wert steht links neben dem Balken
-- Räume sind in **Gruppen** organisiert (z. B. beheizt, unbeheizt, außen). Zwischen den Gruppen steht nur eine dünne Trennlinie, jede Gruppe kann eine **eigene Skala** haben
-- Pro Raum eine **priorisierte Sensorliste**: der erste Sensor mit gültigem Wert wird angezeigt (z. B. Zigbee zuerst, Homematic als Fallback)
-- Klick auf eine Zeile öffnet die Detailansicht des verwendeten Sensors
-- Vollständig über den **visuellen Editor** konfigurierbar, nichts ist vorbelegt
+A Home Assistant dashboard card that shows room temperatures as gradient bars (styled after the weather forecast card).
 
-## Installation über HACS
+- Default scale **15–25 °C**
+- Gradient: blue below 19 °C, **green 19–21 °C**, red above, with smooth transitions
+- A dot marks the current temperature, the value is shown left of the bar
+- Rooms are organized in **groups** (e.g. heated, unheated, outdoor), separated by a thin divider. Every group can have its **own scale**
+- Each room has a **prioritized sensor list**: the first sensor with a valid value is shown (e.g. Zigbee first, Homematic as fallback)
+- Clicking a row opens the more-info dialog of the sensor in use
+- Fully configurable with the **visual editor**, nothing is pre-filled
+- The card and editor UI is German if your Home Assistant user language is German, English otherwise
 
-1. HACS → Menü (drei Punkte) → **Benutzerdefinierte Repositories**
-2. Repository-URL eintragen, Typ **Dashboard** (früher „Lovelace") wählen
-3. „Temperature Bars Card" herunterladen, Browser-Cache neu laden (Strg+F5)
+## Installation via HACS
 
-Die Ressource wird von HACS automatisch eingetragen. Manuell wäre es `/hacsfiles/<repo-name>/temperature-bars-card.js` als Typ *JavaScript-Modul*.
+1. HACS → menu (three dots) → **Custom repositories**
+2. Enter the repository URL and choose type **Dashboard** (formerly "Lovelace")
+3. Download "Temperature Bars Card" and hard-reload the browser (Ctrl+F5)
 
-Bei einem Update in HACS auf „Aktualisieren" klicken und danach den Browser-Cache neu laden.
+HACS adds the resource automatically. Manually it would be `/hacsfiles/<repo-name>/temperature-bars-card.js` as type *JavaScript module*.
 
-## Einrichtung
+To update, click "Update" in HACS and hard-reload the browser.
 
-1. Dashboard bearbeiten → Karte hinzufügen → **Temperature Bars Card**
-2. Mit **+ Gruppe hinzufügen** eine Gruppe anlegen (der Gruppenname dient nur der Übersicht im Editor). Optional eigene Skalenwerte eintragen, leere Felder übernehmen die Standardskala vom Kartenanfang.
-3. In der Gruppe mit **+ Raum hinzufügen** einen Raum anlegen und den HA-Bereich auswählen. Der Anzeigename ist optional, sonst wird der Bereichsname verwendet.
-4. Mit **+ Sensor** Sensoren auswählen. Angeboten werden standardmäßig nur die Temperatursensoren des gewählten Bereichs. Über die Checkbox lassen sich alle Temperatursensoren anzeigen.
-5. **Sensoren des Bereichs übernehmen** fügt alle Temperatursensoren des Bereichs auf einmal hinzu, Homematic-Sensoren landen dabei zuletzt. Die Reihenfolge von Sensoren, Räumen und Gruppen lässt sich mit ▲ ▼ anpassen.
+## Setup
 
-## YAML-Beispiel
+1. Edit dashboard → Add card → **Temperature Bars Card**
+2. Use **+ Add group** to create a group (the group name is only used in the editor). Optionally enter a custom scale; empty fields use the default scale of the card.
+3. Use **+ Add room** inside a group and pick the HA area. The display name is optional, the area name is used otherwise.
+4. Use **+ Sensor** to pick sensors. By default only the temperature sensors of the selected area are offered; a checkbox shows all temperature sensors.
+5. **Add the area's sensors** adds all temperature sensors of the area at once, Homematic sensors last. Sensors, rooms and groups can be reordered with ▲ ▼.
+
+## YAML example
 
 ```yaml
 type: custom:temperature-bars-card
-title: Temperaturen
-min: 15                    # Standardskala für Gruppen ohne eigene Werte
+title: Temperatures
+min: 15                    # default scale for groups without their own values
 max: 25
 green_from: 19
 green_to: 21
@@ -43,43 +46,43 @@ colors:                    # optional
   ok: "#4ade80"
   high: "#ef4444"
 groups:
-  - name: beheizt          # nur für den Editor, wird nicht angezeigt
+  - name: heated           # only used in the editor, not displayed
     rooms:
-      - area: wohnzimmer   # HA-Bereichs-ID, optional
-        name: Wohnzimmer   # optional, sonst Bereichsname
-        sensors:           # Priorität von oben nach unten
-          - sensor.wohnzimmer_zigbee_temperature
-          - sensor.wohnzimmer_heizung_temperature
-  - name: außen
-    min: -10               # eigene Skala dieser Gruppe
+      - area: living_room  # HA area ID, optional
+        name: Living room  # optional, area name otherwise
+        sensors:           # priority from top to bottom
+          - sensor.living_room_zigbee_temperature
+          - sensor.living_room_radiator_temperature
+  - name: outdoor
+    min: -10               # own scale for this group
     max: 35
     green_from: 10
     green_to: 25
     rooms:
-      - area: garten
+      - area: garden
         sensors:
-          - sensor.garten_temperature
+          - sensor.garden_temperature
 ```
 
-Eine Konfiguration mit `rooms:` direkt auf oberster Ebene (ohne Gruppen) funktioniert weiterhin und wird als eine Gruppe dargestellt.
+A configuration with `rooms:` at the top level (without groups) still works and is shown as one group.
 
-## Optionen
+## Options
 
-| Option | Standard | Beschreibung |
+| Option | Default | Description |
 | --- | --- | --- |
-| `title` | – | Kartentitel |
-| `min` / `max` | 15 / 25 | Standardskala des Balkens in °C |
-| `green_from` / `green_to` | 19 / 21 | Standard für den grünen Komfortbereich |
-| `decimals` | 1 | Nachkommastellen |
-| `colors.low/ok/high` | blau/grün/rot | Farben des Verlaufs |
-| `groups[].name` | – | Gruppenname, nur im Editor sichtbar |
-| `groups[].min/max/green_from/green_to` | Standardskala | Eigene Skala der Gruppe |
-| `groups[].rooms[].sensors` | – | Sensorliste in Prioritätsreihenfolge |
-| `groups[].rooms[].area` | – | HA-Bereich, filtert die Sensorauswahl im Editor |
-| `groups[].rooms[].name` | Bereichsname | Anzeigename |
+| `title` | – | Card title |
+| `min` / `max` | 15 / 25 | Default bar scale in °C |
+| `green_from` / `green_to` | 19 / 21 | Default green comfort range |
+| `decimals` | 1 | Decimal places |
+| `colors.low/ok/high` | blue/green/red | Gradient colors |
+| `groups[].name` | – | Group name, only visible in the editor |
+| `groups[].min/max/green_from/green_to` | default scale | Own scale of the group |
+| `groups[].rooms[].sensors` | – | Sensor list in priority order |
+| `groups[].rooms[].area` | – | HA area, filters the sensor choice in the editor |
+| `groups[].rooms[].name` | area name | Display name |
 
-Ein Raum ohne gültigen Sensorwert (alle `unavailable`/`unknown`) wird abgedunkelt mit „–" angezeigt.
+A room without a valid sensor value (all `unavailable`/`unknown`) is shown dimmed with "–".
 
 ## Releases
 
-Eine GitHub Action (`.github/workflows/release.yml`) legt automatisch ein Release `vX.Y.Z` an, sobald `CARD_VERSION` in `temperature-bars-card.js` erhöht und nach `main` gepusht wird. HACS zeigt die neue Version dann als Update an. Existiert das Release bereits, passiert nichts.
+A GitHub Action (`.github/workflows/release.yml`) automatically creates a release `vX.Y.Z` when `CARD_VERSION` in `temperature-bars-card.js` is raised and pushed to `main`. HACS then shows the new version as an update. If the release already exists, nothing happens.

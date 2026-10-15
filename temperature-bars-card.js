@@ -1,18 +1,21 @@
 /**
  * temperature-bars-card
  *
- * Raumtemperaturen als Balken mit Farbverlauf (blau -> gruen -> rot).
- * Raeume sind in Gruppen organisiert (z. B. beheizt / unbeheizt / aussen),
- * jede Gruppe kann eine eigene Skala haben, zwischen den Gruppen steht
- * eine duenne Trennlinie. Pro Raum eine priorisierte Sensorliste: der
- * erste Sensor mit gueltigem Wert wird angezeigt, die uebrigen dienen als
- * Fallback. Konfiguration komplett ueber den visuellen Editor moeglich.
+ * Room temperatures as bars with a color gradient (blue -> green -> red).
+ * Rooms are organized in groups (e.g. heated / unheated / outdoor), each
+ * group can have its own scale, and a thin divider line separates the groups.
+ * Every room has a prioritized sensor list: the first sensor with a valid
+ * value is shown, the others act as fallbacks. Fully configurable through
+ * the visual editor.
  *
- * Abwaertskompatibel: eine Konfiguration mit `rooms:` auf oberster Ebene
- * wird als eine einzelne Gruppe dargestellt.
+ * The UI is shown in German if the Home Assistant user profile language is
+ * German, otherwise in English.
+ *
+ * Backwards compatible: a configuration with a top-level `rooms:` list is
+ * rendered as a single group.
  */
 
-const CARD_VERSION = "0.2.0";
+const CARD_VERSION = "0.3.0";
 
 const DEFAULTS = {
   min: 15,
@@ -29,6 +32,106 @@ const DEFAULTS = {
 
 const SCALE_KEYS = ["min", "max", "green_from", "green_to"];
 
+/* ------------------------------------------------------------------ */
+/* Translations                                                        */
+/* ------------------------------------------------------------------ */
+
+const I18N = {
+  en: {
+    // card
+    empty: "No rooms configured yet. Add groups, rooms and sensors in the card editor.",
+    room: "Room",
+    fallback: "fallback sensor",
+    stubTitle: "Temperatures",
+    // form field labels
+    title: "Title",
+    min: "Scale from (°C)",
+    max: "Scale to (°C)",
+    green_from: "Green from (°C)",
+    green_to: "Green to (°C)",
+    area: "Area",
+    name: "Name",
+    entity: "Temperature sensor",
+    // editor
+    defMin: "Default: scale from (°C)",
+    defMax: "Default: scale to (°C)",
+    defGreenFrom: "Default: green from (°C)",
+    defGreenTo: "Default: green to (°C)",
+    defaultScaleNote: "The default scale applies to all groups that have no scale of their own.",
+    groups: "Groups",
+    addGroup: "+ Add group",
+    groupsNote:
+      "A thin divider line is shown between groups. For each room the sensor order matters: the first sensor with a valid value is shown, the others are fallbacks.",
+    groupName: "Group name (editor only)",
+    groupScaleNote: "Empty scale fields use the default scale.",
+    addRoom: "+ Add room",
+    roomName: "Display name (optional)",
+    sensorsTitle: "Sensors (priority from top to bottom)",
+    addSensor: "+ Sensor",
+    adoptSensors: "Add the area's sensors",
+    adoptSensorsTitle: "Adds all temperature sensors of the area, Homematic last",
+    showAll: "Show all temperature sensors",
+    noAreaSensors: "No temperature sensors found in this area, all temperature sensors are offered.",
+    up: "Move up",
+    down: "Move down",
+    remove: "Remove",
+  },
+  de: {
+    // card
+    empty: "Noch keine Räume konfiguriert. Gruppen, Räume und Sensoren im Karten-Editor hinzufügen.",
+    room: "Raum",
+    fallback: "Fallback-Sensor",
+    stubTitle: "Temperaturen",
+    // form field labels
+    title: "Titel",
+    min: "Skala von (°C)",
+    max: "Skala bis (°C)",
+    green_from: "Grün ab (°C)",
+    green_to: "Grün bis (°C)",
+    area: "Bereich",
+    name: "Name",
+    entity: "Temperatursensor",
+    // editor
+    defMin: "Standard: Skala von (°C)",
+    defMax: "Standard: Skala bis (°C)",
+    defGreenFrom: "Standard: Grün ab (°C)",
+    defGreenTo: "Standard: Grün bis (°C)",
+    defaultScaleNote: "Die Standardskala gilt für alle Gruppen, die keine eigene Skala haben.",
+    groups: "Gruppen",
+    addGroup: "+ Gruppe hinzufügen",
+    groupsNote:
+      "Zwischen den Gruppen wird eine dünne Trennlinie angezeigt. Pro Raum zählt die Reihenfolge der Sensoren: Der erste Sensor mit gültigem Wert wird angezeigt, die weiteren sind Fallback.",
+    groupName: "Gruppenname (nur im Editor)",
+    groupScaleNote: "Leere Skalenfelder übernehmen die Standardskala.",
+    addRoom: "+ Raum hinzufügen",
+    roomName: "Anzeigename (optional)",
+    sensorsTitle: "Sensoren (Priorität von oben nach unten)",
+    addSensor: "+ Sensor",
+    adoptSensors: "Sensoren des Bereichs übernehmen",
+    adoptSensorsTitle: "Fügt alle Temperatursensoren des Bereichs hinzu, Homematic zuletzt",
+    showAll: "Alle Temperatursensoren anzeigen",
+    noAreaSensors: "In diesem Bereich wurden keine Temperatursensoren gefunden, es werden alle Temperatursensoren angeboten.",
+    up: "Nach oben",
+    down: "Nach unten",
+    remove: "Entfernen",
+  },
+};
+
+/** German if the HA user profile language is German, English otherwise. */
+function langOf(hass) {
+  const l = (hass && ((hass.locale && hass.locale.language) || hass.language)) || "en";
+  return String(l).toLowerCase().startsWith("de") ? "de" : "en";
+}
+
+function tr(hass, key) {
+  const v = I18N[langOf(hass)][key];
+  return v !== undefined ? v : I18N.en[key] !== undefined ? I18N.en[key] : key;
+}
+
+/* ------------------------------------------------------------------ */
+/* Helpers                                                             */
+/* ------------------------------------------------------------------ */
+
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const esc = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -39,7 +142,7 @@ function num(v, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-/** Skala aus `src`, fehlende oder ungueltige Werte kommen aus `base`. */
+/** Scale from `src`; missing or invalid values come from `base`. */
 function normScale(src, base) {
   const s = {
     min: num(src.min, base.min),
@@ -61,7 +164,7 @@ function normScale(src, base) {
   return s;
 }
 
-/** Konfiguration in Gruppenform bringen (alte `rooms:` -> eine Gruppe). */
+/** Bring a config into group form (legacy top-level `rooms:` -> one group). */
 function configGroups(config) {
   if (Array.isArray(config.groups)) return config.groups;
   if (Array.isArray(config.rooms)) return [{ rooms: config.rooms }];
@@ -92,7 +195,7 @@ function gradientCss(s, colors) {
   );
 }
 
-/** Erster Sensor der Liste mit numerischem Wert (Prioritaetsreihenfolge). */
+/** First sensor in the list with a numeric value (priority order). */
 function resolveRoom(hass, room) {
   const sensors = (room.sensors || []).filter(Boolean);
   for (const id of sensors) {
@@ -112,10 +215,10 @@ function resolveRoom(hass, room) {
 }
 
 function roomName(hass, room) {
-  return room.name || (room.area && hass.areas && hass.areas[room.area] && hass.areas[room.area].name) || "Raum";
+  return room.name || (room.area && hass.areas && hass.areas[room.area] && hass.areas[room.area].name) || tr(hass, "room");
 }
 
-/** Temperatursensoren eines HA-Bereichs (direkt oder ueber das Geraet zugeordnet). */
+/** Temperature sensors of an HA area (assigned directly or via their device). */
 function areaTempSensors(hass, areaId) {
   if (!areaId) return [];
   return Object.keys(hass.states).filter((id) => {
@@ -127,14 +230,14 @@ function areaTempSensors(hass, areaId) {
   });
 }
 
-/** Heuristik fuer die Vorschlagsreihenfolge: Homematic zuletzt. */
+/** Heuristic for the suggested order: Homematic last. */
 function isHomematic(hass, id) {
   const ent = hass.entities && hass.entities[id];
   return !!(ent && ent.platform && /homematic|hmip|ccu/i.test(ent.platform)) || /homematic|hmip/i.test(id);
 }
 
 /* ------------------------------------------------------------------ */
-/* Karte                                                               */
+/* Card                                                                */
 /* ------------------------------------------------------------------ */
 
 class TemperatureBarsCard extends HTMLElement {
@@ -148,20 +251,20 @@ class TemperatureBarsCard extends HTMLElement {
     return document.createElement("temperature-bars-card-editor");
   }
 
-  static getStubConfig() {
-    return { title: "Temperaturen", groups: [] };
+  static getStubConfig(hass) {
+    return { title: tr(hass, "stubTitle"), groups: [] };
   }
 
   setConfig(config) {
-    if (!config) throw new Error("Ungueltige Konfiguration");
+    if (!config) throw new Error("Invalid configuration");
     if (config.rooms !== undefined && !Array.isArray(config.rooms)) {
-      throw new Error("'rooms' muss eine Liste sein");
+      throw new Error("'rooms' must be a list");
     }
     if (config.groups !== undefined) {
-      if (!Array.isArray(config.groups)) throw new Error("'groups' muss eine Liste sein");
+      if (!Array.isArray(config.groups)) throw new Error("'groups' must be a list");
       config.groups.forEach((g, i) => {
         if (g.rooms !== undefined && !Array.isArray(g.rooms)) {
-          throw new Error(`'groups[${i}].rooms' muss eine Liste sein`);
+          throw new Error(`'groups[${i}].rooms' must be a list`);
         }
       });
     }
@@ -197,7 +300,10 @@ class TemperatureBarsCard extends HTMLElement {
       }),
     }));
 
-    const sig = JSON.stringify(groups.map((g) => g.rows.map((x) => [x.name, x.r && x.r.value, x.r && x.r.entity])));
+    const sig = JSON.stringify([
+      langOf(hass),
+      groups.map((g) => g.rows.map((x) => [x.name, x.r && x.r.value, x.r && x.r.entity])),
+    ]);
     if (sig === this._sig) return;
     this._sig = sig;
 
@@ -219,7 +325,7 @@ class TemperatureBarsCard extends HTMLElement {
               </div>`;
             }
             const f = clamp((x.r.value - g.scale.min) / (g.scale.max - g.scale.min), 0, 1);
-            const title = `${x.r.entity}${x.r.fallback ? " (Fallback-Sensor)" : ""}`;
+            const title = `${x.r.entity}${x.r.fallback ? ` (${tr(hass, "fallback")})` : ""}`;
             return `<div class="row" data-g="${gi}" data-i="${i}" title="${esc(title)}">
               <div class="name">${esc(x.name)}</div>
               <div class="val">${fmt(x.r.value)}${esc(x.r.unit)}</div>
@@ -240,9 +346,7 @@ class TemperatureBarsCard extends HTMLElement {
       .join("");
 
     const hasRows = groups.some((g) => g.rows.length);
-    const empty = hasRows
-      ? ""
-      : `<div class="hint">Noch keine Räume konfiguriert. Gruppen, Räume und Sensoren im Karten-Editor hinzufügen.</div>`;
+    const empty = hasRows ? "" : `<div class="hint">${esc(tr(hass, "empty"))}</div>`;
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -283,7 +387,7 @@ class TemperatureBarsCard extends HTMLElement {
 }
 
 /* ------------------------------------------------------------------ */
-/* Visueller Editor                                                    */
+/* Visual editor                                                       */
 /* ------------------------------------------------------------------ */
 
 function h(tag, props, ...children) {
@@ -299,19 +403,7 @@ function h(tag, props, ...children) {
   return el;
 }
 
-const LABELS = {
-  title: "Titel",
-  min: "Skala von (°C)",
-  max: "Skala bis (°C)",
-  green_from: "Grün ab (°C)",
-  green_to: "Grün bis (°C)",
-  name: "Name",
-  area: "Bereich",
-  room_name: "Anzeigename (optional)",
-  entity: "Temperatursensor",
-};
-
-/** Laedt die HA-Editor-Elemente (ha-form, Pickers), falls noch nicht registriert. */
+/** Loads the HA editor elements (ha-form, pickers) if they are not registered yet. */
 async function ensureEditorElements() {
   if (customElements.get("ha-form") && customElements.get("ha-selector") && customElements.get("ha-entity-picker")) return;
   try {
@@ -319,7 +411,7 @@ async function ensureEditorElements() {
     const card = await helpers.createCardElement({ type: "entities", entities: [] });
     if (card && card.constructor && card.constructor.getConfigElement) await card.constructor.getConfigElement();
   } catch (e) {
-    /* Elemente sind meist ohnehin schon geladen */
+    /* the elements are usually loaded anyway */
   }
 }
 
@@ -327,8 +419,12 @@ class TemperatureBarsCardEditor extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
-    this._showAll = new WeakSet(); // Raum-Objekte mit "alle Sensoren anzeigen"
+    this._showAll = new WeakSet(); // room objects with "show all sensors" enabled
     this._lastEmitted = null;
+  }
+
+  _t(key) {
+    return tr(this._hass, key);
   }
 
   setConfig(config) {
@@ -351,9 +447,10 @@ class TemperatureBarsCardEditor extends HTMLElement {
   }
 
   set hass(hass) {
+    const langChanged = this._hass && langOf(this._hass) !== langOf(hass);
     this._hass = hass;
     this.shadowRoot.querySelectorAll("ha-form").forEach((f) => (f.hass = hass));
-    if (this._cfg && !this._rendered) this._render();
+    if (this._cfg && (!this._rendered || langChanged)) this._render();
   }
 
   _emit() {
@@ -385,13 +482,13 @@ class TemperatureBarsCardEditor extends HTMLElement {
     if (rerender) this._render();
   }
 
-  _form(schema, data, onChange, labels) {
-    const l = labels || LABELS;
+  /** ha-form with translated labels; `overrides` maps a field name to a label. */
+  _form(schema, data, onChange, overrides) {
     return h("ha-form", {
       ".hass": this._hass,
       ".schema": schema,
       ".data": data,
-      ".computeLabel": (s) => l[s.name] || LABELS[s.name] || s.name,
+      ".computeLabel": (s) => (overrides && overrides[s.name]) || this._t(s.name),
       onchange: (e) => e.stopPropagation(),
       "onvalue-changed": (ev) => {
         ev.stopPropagation();
@@ -405,9 +502,9 @@ class TemperatureBarsCardEditor extends HTMLElement {
     return h(
       "div",
       { class: "btns" },
-      h("button", { class: "small", text: "▲", title: "Nach oben", ".disabled": idx === 0, onclick: () => this._change(() => swap(idx, idx - 1)) }),
-      h("button", { class: "small", text: "▼", title: "Nach unten", ".disabled": idx === arr.length - 1, onclick: () => this._change(() => swap(idx, idx + 1)) }),
-      h("button", { class: "small danger", text: "✕", title: "Entfernen", onclick: () => this._change(onRemove) })
+      h("button", { class: "small", text: "▲", title: this._t("up"), ".disabled": idx === 0, onclick: () => this._change(() => swap(idx, idx - 1)) }),
+      h("button", { class: "small", text: "▼", title: this._t("down"), ".disabled": idx === arr.length - 1, onclick: () => this._change(() => swap(idx, idx + 1)) }),
+      h("button", { class: "small danger", text: "✕", title: this._t("remove"), onclick: () => this._change(onRemove) })
     );
   }
 
@@ -445,7 +542,7 @@ class TemperatureBarsCardEditor extends HTMLElement {
       })
     );
 
-    // Allgemein: Titel + Standardskala
+    // General: title + default scale
     const general = {
       title: cfg.title || "",
       min: num(cfg.min, DEFAULTS.min),
@@ -469,27 +566,27 @@ class TemperatureBarsCardEditor extends HTMLElement {
           ],
           general,
           (v) => this._change(() => Object.assign(this._cfg, v), false),
-          { min: "Standard: Skala von (°C)", max: "Standard: Skala bis (°C)", green_from: "Standard: Grün ab (°C)", green_to: "Standard: Grün bis (°C)" }
+          {
+            min: this._t("defMin"),
+            max: this._t("defMax"),
+            green_from: this._t("defGreenFrom"),
+            green_to: this._t("defGreenTo"),
+          }
         ),
-        h("div", { class: "note", text: "Die Standardskala gilt für alle Gruppen, die keine eigene Skala haben." })
+        h("div", { class: "note", text: this._t("defaultScaleNote") })
       )
     );
 
-    // Gruppen
-    root.append(h("h3", { text: "Gruppen" }));
+    // Groups
+    root.append(h("h3", { text: this._t("groups") }));
     cfg.groups.forEach((group, gi) => root.append(this._renderGroup(group, gi)));
     root.append(
       h("button", {
-        text: "+ Gruppe hinzufügen",
+        text: this._t("addGroup"),
         onclick: () => this._change(() => cfg.groups.push({ name: "", rooms: [] })),
       })
     );
-    root.append(
-      h("div", {
-        class: "note",
-        text: "Zwischen den Gruppen wird eine dünne Trennlinie angezeigt. Pro Raum zählt die Reihenfolge der Sensoren: Der erste Sensor mit gültigem Wert wird angezeigt, die weiteren sind Fallback.",
-      })
-    );
+    root.append(h("div", { class: "note", text: this._t("groupsNote") }));
   }
 
   _renderGroup(group, gi) {
@@ -516,17 +613,17 @@ class TemperatureBarsCardEditor extends HTMLElement {
               group.name = v.name || "";
               for (const k of SCALE_KEYS) group[k] = v[k];
             }, false),
-          { name: "Gruppenname (nur im Editor)" }
+          { name: this._t("groupName") }
         ),
         this._moveBtns(cfg.groups, gi, () => cfg.groups.splice(gi, 1))
       )
     );
-    box.append(h("div", { class: "note", text: "Leere Skalenfelder übernehmen die Standardskala." }));
+    box.append(h("div", { class: "note", text: this._t("groupScaleNote") }));
 
     group.rooms.forEach((room, ri) => box.append(this._renderRoom(group, room, ri)));
     box.append(
       h("button", {
-        text: "+ Raum hinzufügen",
+        text: this._t("addRoom"),
         onclick: () => this._change(() => group.rooms.push({ area: "", name: "", sensors: [] })),
       })
     );
@@ -537,7 +634,7 @@ class TemperatureBarsCardEditor extends HTMLElement {
     const hass = this._hass;
     const box = h("div", { class: "room" });
 
-    // Kopf: Bereich + Name
+    // Head: area + name
     box.append(
       h(
         "div",
@@ -555,14 +652,14 @@ class TemperatureBarsCardEditor extends HTMLElement {
               room.name = v.name || "";
             }, areaChanged);
           },
-          { name: LABELS.room_name }
+          { name: this._t("roomName") }
         ),
         this._moveBtns(group.rooms, ri, () => group.rooms.splice(ri, 1))
       )
     );
 
-    // Sensoren
-    box.append(h("div", { class: "sensors-title", text: "Sensoren (Priorität von oben nach unten)" }));
+    // Sensors
+    box.append(h("div", { class: "sensors-title", text: this._t("sensorsTitle") }));
     const areaIds = areaTempSensors(hass, room.area);
     const showAll = this._showAll.has(room);
     const restrict = room.area && areaIds.length > 0 && !showAll;
@@ -583,12 +680,12 @@ class TemperatureBarsCardEditor extends HTMLElement {
     });
 
     const actions = h("div", { class: "actions" });
-    actions.append(h("button", { text: "+ Sensor", onclick: () => this._change(() => room.sensors.push("")) }));
+    actions.append(h("button", { text: this._t("addSensor"), onclick: () => this._change(() => room.sensors.push("")) }));
     if (room.area) {
       actions.append(
         h("button", {
-          text: "Sensoren des Bereichs übernehmen",
-          title: "Fügt alle Temperatursensoren des Bereichs hinzu, Homematic zuletzt",
+          text: this._t("adoptSensors"),
+          title: this._t("adoptSensorsTitle"),
           onclick: () =>
             this._change(() => {
               const suggested = [...areaIds].sort(
@@ -612,13 +709,13 @@ class TemperatureBarsCardEditor extends HTMLElement {
               this._render();
             },
           }),
-          "Alle Temperatursensoren anzeigen"
+          this._t("showAll")
         )
       );
     }
     box.append(actions);
     if (room.area && areaIds.length === 0) {
-      box.append(h("div", { class: "note", text: "In diesem Bereich wurden keine Temperatursensoren gefunden, es werden alle angeboten." }));
+      box.append(h("div", { class: "note", text: this._t("noAreaSensors") }));
     }
     return box;
   }
@@ -627,11 +724,12 @@ class TemperatureBarsCardEditor extends HTMLElement {
 customElements.define("temperature-bars-card", TemperatureBarsCard);
 customElements.define("temperature-bars-card-editor", TemperatureBarsCardEditor);
 
+// The card picker shows these static strings, they cannot be translated.
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "temperature-bars-card",
   name: "Temperature Bars Card",
-  description: "Raumtemperaturen als Balken mit Farbverlauf, in Gruppen mit eigener Skala und priorisierten Sensoren pro Raum.",
+  description: "Room temperatures as gradient bars, organized in groups with their own scale and prioritized sensors per room.",
   preview: false,
 });
 

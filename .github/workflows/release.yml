@@ -1,8 +1,8 @@
 name: Release
 
-# Legt automatisch ein GitHub-Release an, sobald CARD_VERSION in
-# temperature-bars-card.js erhöht und nach main gepusht wurde.
-# HACS zeigt dadurch die neue Version als Update an.
+# Automatically creates a GitHub release when CARD_VERSION in
+# temperature-bars-card.js is raised and pushed to main.
+# HACS then shows the new version as an update.
 
 on:
   push:
@@ -20,23 +20,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Version aus der Karte lesen
+      - name: Read version from the card
         id: version
         run: |
           VERSION=$(grep -oP 'CARD_VERSION = "\K[0-9]+\.[0-9]+\.[0-9]+(?=")' temperature-bars-card.js || true)
           if [ -z "$VERSION" ]; then
-            echo "CARD_VERSION (x.y.z) in temperature-bars-card.js nicht gefunden" >&2
+            echo "CARD_VERSION (x.y.z) not found in temperature-bars-card.js" >&2
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Release anlegen, falls es noch keins gibt
+      - name: Create release if missing
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           if gh release view "v$VERSION" >/dev/null 2>&1; then
-            echo "Release v$VERSION existiert bereits, nichts zu tun."
+            echo "Release v$VERSION already exists, nothing to do."
           else
             gh release create "v$VERSION" \
               --target "$GITHUB_SHA" \
