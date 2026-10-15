@@ -79,3 +79,7 @@ Eine Konfiguration mit `rooms:` direkt auf oberster Ebene (ohne Gruppen) funktio
 | `groups[].rooms[].name` | Bereichsname | Anzeigename |
 
 Ein Raum ohne gültigen Sensorwert (alle `unavailable`/`unknown`) wird abgedunkelt mit „–" angezeigt.
+
+## Releases
+
+Eine GitHub Action (`.github/workflows/release.yml`) legt automatisch ein Release `vX.Y.Z` an, sobald `CARD_VERSION` in `temperature-bars-card.js` erhöht und nach `main` gepusht wird. HACS zeigt die neue Version dann als Update an. Existiert das Release bereits, passiert nichts.
